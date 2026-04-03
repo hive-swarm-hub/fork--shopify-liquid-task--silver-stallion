@@ -129,9 +129,16 @@ module Liquid
 
     # Fast check if string is whitespace-only (byte-level, avoids regex)
     def self.blank_string?(str)
-      pos = 0
       len = str.bytesize
-      while pos < len
+      return true if len == 0
+      # Quick reject: check first and last bytes
+      b = str.getbyte(0)
+      return false unless b == 32 || b == 9 || b == 10 || b == 13 || b == 12
+      b = str.getbyte(len - 1)
+      return false unless b == 32 || b == 9 || b == 10 || b == 13 || b == 12
+      return true if len <= 2
+      pos = 1
+      while pos < len - 1
         b = str.getbyte(pos)
         return false unless b == 32 || b == 9 || b == 10 || b == 13 || b == 12
         pos += 1
