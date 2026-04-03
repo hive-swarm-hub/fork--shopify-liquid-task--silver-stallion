@@ -214,7 +214,6 @@ module Liquid
       # End of markup? No filters.
       if pos >= len
         @filters = Const::EMPTY_ARRAY
-        _cache_variable_state(markup, parse_context)
         return true
       end
 
@@ -382,16 +381,7 @@ module Liquid
         @filters = Const::EMPTY_ARRAY
       end
 
-      _cache_variable_state(markup, parse_context)
-      true
-    rescue SyntaxError
-      # If fast parse fails, fall back to full parse
-      @name = nil
-      @filters = nil
-      false
-    end
-
-    private def _cache_variable_state(markup, parse_context)
+      # Cache parsed state for reuse across template parses
       if parse_context.variable_cacheable && @name.frozen?
         filters = @filters
         unless filters.frozen?
@@ -410,6 +400,12 @@ module Liquid
         end
         GLOBAL_VARIABLE_STATE_CACHE[markup] = [@name, filters].freeze
       end
+      true
+    rescue SyntaxError
+      # If fast parse fails, fall back to full parse
+      @name = nil
+      @filters = nil
+      false
     end
 
     def raw
@@ -478,7 +474,7 @@ module Liquid
     end
 
     def render(context)
-      obj = context.evaluate(@name)
+      obj = @name.instance_of?(VariableLookup) ? @name.evaluate(context) : context.evaluate(@name)
 
       @filters.each do |filter_name, filter_args, filter_kwargs|
         if filter_args.empty? && !filter_kwargs
@@ -486,9 +482,11 @@ module Liquid
         elsif !filter_kwargs && filter_args.length == 1
           # Single positional arg — most common after no-arg
           obj = context.invoke_two(filter_name, obj, context.evaluate(filter_args[0]))
+        elsif !filter_kwargs && filter_args.length == 2
+          obj = context.invoke_three(filter_name, obj, context.evaluate(filter_args[0]), context.evaluate(filter_args[1]))
         else
           filter_args = evaluate_filter_expressions(context, filter_args, filter_kwargs)
-          obj = context.invoke(filter_name, obj, *filter_args)
+          obj = context.invoke_array(filter_name, obj, filter_args)
         end
       end
 

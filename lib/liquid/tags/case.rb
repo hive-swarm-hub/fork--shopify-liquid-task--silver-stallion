@@ -64,12 +64,12 @@ module Liquid
 
     def render_to_output_buffer(context, output)
       execute_else_block = true
-      blocks = @blocks
-      i = 0
-      len = blocks.length
 
-      while i < len
-        block = blocks[i]
+      blocks = @blocks
+      idx = 0
+      len = blocks.length
+      while idx < len
+        block = blocks[idx]
         if block.else?
           block.attachment.render_to_output_buffer(context, output) if execute_else_block
         else
@@ -79,7 +79,7 @@ module Liquid
             block.attachment.render_to_output_buffer(context, output)
           end
         end
-        i += 1
+        idx += 1
       end
 
       output

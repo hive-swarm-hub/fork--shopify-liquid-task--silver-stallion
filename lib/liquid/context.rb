@@ -120,6 +120,26 @@ module Liquid
       end
     end
 
+    # Fast path for three-argument filter invocation (input + two args)
+    def invoke_three(method, input, arg1, arg2)
+      result = strainer.invoke_three(method, input, arg1, arg2)
+      if result.instance_of?(String) || result.instance_of?(Integer) || result.instance_of?(Float) || result.nil?
+        result
+      else
+        result.to_liquid
+      end
+    end
+
+    # Invoke filter with pre-built args array — avoids splat allocation
+    def invoke_array(method, input, args)
+      result = strainer.invoke_array(method, input, args)
+      if result.instance_of?(String) || result.instance_of?(Integer) || result.instance_of?(Float) || result.nil?
+        result
+      else
+        result.to_liquid
+      end
+    end
+
     # Fast path for single-argument filter invocation (the most common case:
     # {{ value | filter }}) — avoids *args splat allocation.
     def invoke_single(method, input)
@@ -275,11 +295,11 @@ module Liquid
     end
 
     def lookup_and_evaluate(obj, key, raise_on_not_found: true)
-      if @strict_variables && raise_on_not_found && obj.respond_to?(:key?) && !obj.key?(key)
+      value = obj[key]
+
+      if value.nil? && @strict_variables && raise_on_not_found && obj.respond_to?(:key?) && !obj.key?(key)
         raise Liquid::UndefinedVariable, "undefined variable #{key}"
       end
-
-      value = obj[key]
 
       if value.instance_of?(Proc) && obj.respond_to?(:[]=)
         obj[key] = value.arity == 0 ? value.call : value.call(self)

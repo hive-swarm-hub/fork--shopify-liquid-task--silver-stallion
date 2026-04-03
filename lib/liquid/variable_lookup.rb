@@ -93,8 +93,7 @@ module Liquid
         dot_pos = markup.index('.')
         if dot_pos.nil?
           @name = markup
-          @lookups = nil
-          @single_lookup = nil
+          @lookups = Const::EMPTY_ARRAY
           @command_flags = 0
           return
         end
@@ -128,7 +127,6 @@ module Liquid
           pos += 1 # skip dot
         end
         @lookups = lookups
-        @single_lookup = nil
         return
       end
 
@@ -166,7 +164,9 @@ module Liquid
     end
 
     def evaluate(context)
-      name = @name.instance_of?(String) ? @name : context.evaluate(@name)
+      # Fast path: String names (the overwhelmingly common case) don't need evaluation
+      name = @name
+      name = context.evaluate(name) unless name.instance_of?(String)
       object = context.find_variable(name)
 
       # Fast path: single-segment lookup (e.g. product.title) — avoids Array overhead

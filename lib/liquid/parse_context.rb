@@ -5,14 +5,14 @@ module Liquid
     attr_accessor :locale, :line_number, :trim_whitespace, :depth
     attr_reader :partial, :error_mode, :environment, :expression_cache, :string_scanner, :cursor, :variable_cacheable
 
-    # Shared global expression cache — persists across template parses.
+    # Global expression cache shared across template parses — avoids re-creating
+    # VariableLookup objects for the same markup across templates.
     GLOBAL_EXPRESSION_CACHE = {}
 
     def warnings
       @warnings
     end
 
-    # Lazy-add a warning without requiring @warnings to start as a mutable Array.
     def add_warning(e)
       if @warnings.equal?(Const::EMPTY_ARRAY)
         @warnings = [e]
@@ -21,7 +21,7 @@ module Liquid
       end
     end
 
-    # Shared frozen default template options (lazily set after I18n is ready)
+    # Shared frozen default template options
     def self.default_template_options
       @_default_template_options ||= { locale: I18n.default }.freeze
     end
@@ -39,7 +39,7 @@ module Liquid
       end
       @warnings = Const::EMPTY_ARRAY
 
-      # Reuse StringScanner and Cursor across parses via Thread-local storage.
+      # Reuse StringScanner and Cursor across parses via Thread-local storage
       @string_scanner = (Thread.current[:_liq_ss] ||= StringScanner.new(""))
       @string_scanner.string = ""
 

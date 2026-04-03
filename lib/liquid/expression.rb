@@ -46,12 +46,17 @@ module Liquid
 
         if (markup.start_with?('"') && markup.end_with?('"')) ||
           (markup.start_with?("'") && markup.end_with?("'"))
+          if cache
+            return cache[markup] if cache.key?(markup)
+            result = markup.byteslice(1, markup.bytesize - 2)
+            cache[markup] = result
+            return result
+          end
           return markup.byteslice(1, markup.bytesize - 2)
         elsif LITERALS.key?(markup)
           return LITERALS[markup]
         end
 
-        # Cache only exists during parsing
         if cache
           return cache[markup] if cache.key?(markup)
           result = inner_parse(markup, ss, cache).freeze

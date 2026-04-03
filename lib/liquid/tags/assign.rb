@@ -27,35 +27,53 @@ module Liquid
 
     attr_reader :to, :from
 
-    # VariableSignature chars: [a-zA-Z0-9_\-\.\[\]\(\)]
-    def self.var_sig_byte?(b)
-      (b >= 97 && b <= 122) || (b >= 65 && b <= 90) || (b >= 48 && b <= 57) ||
-        b == 95 || b == 45 || b == 46 || b == 91 || b == 93 || b == 40 || b == 41
-    end
+    # Cache for Assign Variable objects by the expression part
+    ASSIGN_VAR_CACHE = {}
 
     def initialize(tag_name, markup, parse_context)
       super
-      # Byte-level parsing of "var_name = value_expr" — avoids MatchData allocation
+      # Fast byte-level parse: find "name = expression"
       len = markup.bytesize
       pos = 0
-      pos += 1 while pos < len && (markup.getbyte(pos) == 32 || markup.getbyte(pos) == 9 || markup.getbyte(pos) == 10 || markup.getbyte(pos) == 13)
-      name_start = pos
-      pos += 1 while pos < len && self.class.var_sig_byte?(markup.getbyte(pos))
-      if pos > name_start
-        name_end = pos
+      # Skip leading whitespace
+      pos += 1 while pos < len && (markup.getbyte(pos) == 32 || markup.getbyte(pos) == 9)
+      # Scan identifier for @to
+      to_start = pos
+      b = pos < len ? markup.getbyte(pos) : nil
+      if b && ((b >= 97 && b <= 122) || (b >= 65 && b <= 90) || b == 95)
+        pos += 1
+        while pos < len
+          b = markup.getbyte(pos)
+          break unless (b >= 97 && b <= 122) || (b >= 65 && b <= 90) || (b >= 48 && b <= 57) || b == 95 || b == 45
+          pos += 1
+        end
+        @to = markup.byteslice(to_start, pos - to_start)
+        # Skip whitespace
         pos += 1 while pos < len && (markup.getbyte(pos) == 32 || markup.getbyte(pos) == 9)
+        # Expect '='
         if pos < len && markup.getbyte(pos) == 61 # '='
           pos += 1
+          # Skip whitespace after '='
           pos += 1 while pos < len && (markup.getbyte(pos) == 32 || markup.getbyte(pos) == 9)
-          val_start = pos
-          val_end = len
-          val_end -= 1 while val_end > val_start && (markup.getbyte(val_end - 1) == 32 || markup.getbyte(val_end - 1) == 9 || markup.getbyte(val_end - 1) == 10 || markup.getbyte(val_end - 1) == 13)
-          @to   = markup.byteslice(name_start, name_end - name_start)
-          @from = Variable.new(val_end > val_start ? markup.byteslice(val_start, val_end - val_start) : "", parse_context)
+          from_markup = pos < len ? markup.byteslice(pos, len - pos).rstrip : ""
+          em = parse_context.error_mode
+          cacheable = parse_context.variable_cacheable && em != :strict && em != :strict2 && em != :rigid
+          if cacheable && (cached = ASSIGN_VAR_CACHE[from_markup])
+            @from = cached
+          else
+            @from = Variable.new(from_markup, parse_context)
+            ASSIGN_VAR_CACHE[from_markup] = @from if cacheable
+          end
           return
         end
       end
-      self.class.raise_syntax_error(parse_context)
+      # Fallback to regex
+      if markup =~ Syntax
+        @to = Regexp.last_match(1)
+        @from = Variable.new(Regexp.last_match(2), parse_context)
+      else
+        self.class.raise_syntax_error(parse_context)
+      end
     end
 
     def render_to_output_buffer(context, output)

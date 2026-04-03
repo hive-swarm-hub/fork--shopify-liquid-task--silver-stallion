@@ -265,9 +265,7 @@ module Liquid
           '>'
         end
       when 99 # 'c' — possible 'contains'
-        if @ss.scan(CONTAINS_REGEX)
-          CONTAINS_FROZEN
-        end
+        @ss.scan(CONTAINS_REGEX) ? CONTAINS_FROZEN : nil
       end
     end
 
