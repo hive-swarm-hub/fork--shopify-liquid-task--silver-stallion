@@ -67,7 +67,7 @@ module Liquid
     # @liquid_syntax string | downcase
     # @liquid_return [string]
     def downcase(input)
-      Utils.to_s(input).downcase
+      input.instance_of?(String) ? input.downcase : Utils.to_s(input).downcase
     end
 
     # @liquid_public_docs
@@ -78,7 +78,7 @@ module Liquid
     # @liquid_syntax string | upcase
     # @liquid_return [string]
     def upcase(input)
-      Utils.to_s(input).upcase
+      input.instance_of?(String) ? input.upcase : Utils.to_s(input).upcase
     end
 
     # @liquid_public_docs
@@ -89,7 +89,7 @@ module Liquid
     # @liquid_syntax string | capitalize
     # @liquid_return [string]
     def capitalize(input)
-      Utils.to_s(input).capitalize
+      input.instance_of?(String) ? input.capitalize : Utils.to_s(input).capitalize
     end
 
     # @liquid_public_docs
@@ -128,7 +128,8 @@ module Liquid
     # @liquid_syntax string | escape_once
     # @liquid_return [string]
     def escape_once(input)
-      Utils.to_s(input).gsub(HTML_ESCAPE_ONCE_REGEXP, HTML_ESCAPE)
+      input = Utils.to_s(input) unless input.instance_of?(String)
+      input.gsub(HTML_ESCAPE_ONCE_REGEXP, HTML_ESCAPE)
     end
 
     # @liquid_public_docs
@@ -449,7 +450,7 @@ module Liquid
     # @liquid_syntax string | strip_html
     # @liquid_return [string]
     def strip_html(input)
-      input = Utils.to_s(input)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
       # Fast path: no HTML tags at all
       return input unless input.include?('<')
       empty  = ''
