@@ -495,12 +495,14 @@ module Liquid
 
     def render_to_output_buffer(context, output)
       filters = @filters
+      name = @name
       if filters.equal?(Const::EMPTY_ARRAY) && context.global_filter.nil?
-        obj = @name.instance_of?(VariableLookup) ? @name.evaluate(context) : context.evaluate(@name)
+        # Fast path: no filters, just evaluate name
+        obj = name.instance_of?(VariableLookup) ? name.evaluate(context) : context.evaluate(name)
       elsif filters.length == 1 && context.global_filter.nil?
         # Fast path: single filter (very common, e.g. {{ x | escape }})
         fn, fa, fk = filters[0]
-        obj = @name.instance_of?(VariableLookup) ? @name.evaluate(context) : context.evaluate(@name)
+        obj = name.instance_of?(VariableLookup) ? name.evaluate(context) : context.evaluate(name)
         obj = if fa.empty? && !fk
           context.invoke_single(fn, obj)
         elsif !fk && fa.length == 1

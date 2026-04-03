@@ -250,30 +250,40 @@ module Liquid
     # Fetches an object starting at the local scope and then moving up the hierachy
     def find_variable(key, raise_on_not_found: true)
       # Fast path: check top scope first (most common in for loops)
-      scope = @scopes[0]
+      scopes = @scopes
+      scope = scopes[0]
       if scope.key?(key)
         variable = lookup_and_evaluate(scope, key, raise_on_not_found: raise_on_not_found)
-      elsif @scopes.length == 1
-        # Only one scope and key not found — go straight to environments
-        variable = try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
       else
-        # Multiple scopes — search through all of them
-        scopes = @scopes
-        found_scope = nil
-        i = 1
-        len = scopes.length
-        while i < len
-          if scopes[i].key?(key)
-            found_scope = scopes[i]
-            break
+        slen = scopes.length
+        if slen == 1
+          # Only one scope and key not found — go straight to environments
+          variable = try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+        elsif slen == 2
+          # Two scopes (common: for loop with one parent scope)
+          scope1 = scopes[1]
+          variable = if scope1.key?(key)
+            lookup_and_evaluate(scope1, key, raise_on_not_found: raise_on_not_found)
+          else
+            try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
           end
-          i += 1
-        end
-
-        variable = if found_scope
-          lookup_and_evaluate(found_scope, key, raise_on_not_found: raise_on_not_found)
         else
-          try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+          # Multiple scopes — search through all of them
+          found_scope = nil
+          i = 1
+          while i < slen
+            if scopes[i].key?(key)
+              found_scope = scopes[i]
+              break
+            end
+            i += 1
+          end
+
+          variable = if found_scope
+            lookup_and_evaluate(found_scope, key, raise_on_not_found: raise_on_not_found)
+          else
+            try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+          end
         end
       end
 

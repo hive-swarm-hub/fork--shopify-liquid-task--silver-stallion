@@ -6,6 +6,11 @@ module Liquid
 
     attr_reader :name
 
+    # True when this is a simple name with no lookups (e.g., "product" not "product.title")
+    def simple_name?
+      @single_lookup.nil? && (@lookups.nil? || @lookups.equal?(Const::EMPTY_ARRAY))
+    end
+
     def lookups
       if @lookups
         @lookups
