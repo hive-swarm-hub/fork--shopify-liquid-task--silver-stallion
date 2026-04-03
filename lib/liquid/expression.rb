@@ -39,21 +39,32 @@ module Liquid
         first_byte = markup.getbyte(0)
         if first_byte == 32 || first_byte == 9 || first_byte == 10 || first_byte == 13 # space, tab, \n, \r
           markup = markup.strip
+          first_byte = markup.getbyte(0)
         else
           last_byte = markup.getbyte(markup.bytesize - 1)
-          markup = markup.strip if last_byte == 32 || last_byte == 9 || last_byte == 10 || last_byte == 13
+          if last_byte == 32 || last_byte == 9 || last_byte == 10 || last_byte == 13
+            markup = markup.strip
+            first_byte = markup.getbyte(0)
+          end
         end
 
-        if (markup.start_with?('"') && markup.end_with?('"')) ||
-          (markup.start_with?("'") && markup.end_with?("'"))
-          if cache
-            return cache[markup] if cache.key?(markup)
-            result = markup.byteslice(1, markup.bytesize - 2)
-            cache[markup] = result
-            return result
+        # Use byte checks instead of start_with?/end_with? for quote detection
+        if first_byte == 34 || first_byte == 39 # " or '
+          last_byte ||= markup.getbyte(markup.bytesize - 1)
+          if first_byte == last_byte
+            if cache
+              return cache[markup] if cache.key?(markup)
+              result = markup.byteslice(1, markup.bytesize - 2)
+              cache[markup] = result
+              return result
+            end
+            return markup.byteslice(1, markup.bytesize - 2)
           end
-          return markup.byteslice(1, markup.bytesize - 2)
-        elsif LITERALS.key?(markup)
+        end
+
+        # Quick length check before hash lookup — literals are all <= 5 bytes
+        len = markup.bytesize
+        if len <= 5 && LITERALS.key?(markup)
           return LITERALS[markup]
         end
 
