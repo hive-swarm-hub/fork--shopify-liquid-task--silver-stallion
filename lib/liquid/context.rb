@@ -257,15 +257,32 @@ module Liquid
       else
         slen = scopes.length
         if slen == 1
-          # Only one scope and key not found — go straight to environments
-          variable = try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+          # Only one scope — inline single-environment lookup (avoids method call)
+          envs = @environments
+          if envs.length == 1
+            variable = lookup_and_evaluate(envs[0], key, raise_on_not_found: raise_on_not_found)
+            if variable.nil? && !(@strict_variables && raise_on_not_found)
+              variable = try_static_env_lookup(key, raise_on_not_found: raise_on_not_found)
+            end
+          else
+            variable = try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+          end
         elsif slen == 2
           # Two scopes (common: for loop with one parent scope)
           scope1 = scopes[1]
           variable = if scope1.key?(key)
             lookup_and_evaluate(scope1, key, raise_on_not_found: raise_on_not_found)
           else
-            try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+            envs = @environments
+            if envs.length == 1
+              found = lookup_and_evaluate(envs[0], key, raise_on_not_found: raise_on_not_found)
+              if found.nil? && !(@strict_variables && raise_on_not_found)
+                found = try_static_env_lookup(key, raise_on_not_found: raise_on_not_found)
+              end
+              found
+            else
+              try_variable_find_in_environments(key, raise_on_not_found: raise_on_not_found)
+            end
           end
         else
           # Multiple scopes — search through all of them
@@ -344,6 +361,21 @@ module Liquid
     private
 
     attr_reader :base_scope_depth
+
+    def try_static_env_lookup(key, raise_on_not_found:)
+      static_envs = @static_environments
+      len = static_envs.length
+      return nil if len == 0
+      i = 0
+      while i < len
+        found_variable = lookup_and_evaluate(static_envs[i], key, raise_on_not_found: raise_on_not_found)
+        if !found_variable.nil? || @strict_variables && raise_on_not_found
+          return found_variable
+        end
+        i += 1
+      end
+      nil
+    end
 
     def try_variable_find_in_environments(key, raise_on_not_found:)
       envs = @environments
