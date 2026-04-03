@@ -71,8 +71,31 @@ module Liquid
       end
     end
 
+    FILTER_NAME_INTERN = Hash.new { |h, k| h[k] = k.freeze }
+
+    # Integer-key lookup for common filter names (avoids byteslice allocation)
+    FILTER_INT_KEYS = {}
+    %w[escape money json size first last default date strip_html
+       truncatewords upcase downcase capitalize strip lstrip rstrip
+       replace split join sort reverse map compact uniq
+       abs ceil floor round plus minus times divided_by modulo
+       append prepend remove remove_first replace_first slice
+       truncate url_encode url_decode newline_to_br strip_newlines
+       img_tag script_tag stylesheet_tag link_to].each do |name|
+      next if name.bytesize > 7
+      key = 0
+      name.each_byte { |b| key = (key << 8) | b }
+      FILTER_INT_KEYS[key] = name.freeze
+    end
+    FILTER_INT_KEYS.freeze
+
     # Cache for [filtername, EMPTY_ARRAY] tuples — avoids repeated array creation
     NO_ARG_FILTER_CACHE = Hash.new { |h, k| h[k] = [k, Const::EMPTY_ARRAY].freeze }
+
+    SINGLE_NO_ARG_FILTER_CACHE = Hash.new { |h, k| h[k] = [NO_ARG_FILTER_CACHE[k]].freeze }
+
+    # Global cache for variable parse state (markup → [name, filters]).
+    GLOBAL_VARIABLE_STATE_CACHE = {}
 
     FilterMarkupRegex        = /#{FilterSeparator}\s*(.*)/om
     FilterParser             = /(?:\s+|#{QuotedFragment}|#{ArgumentSeparator})+/o
@@ -104,6 +127,13 @@ module Liquid
     private def try_fast_parse(markup, parse_context)
       len = markup.bytesize
       return false if len == 0
+
+      # Check global variable state cache
+      if parse_context.variable_cacheable && (cached = GLOBAL_VARIABLE_STATE_CACHE[markup])
+        @name    = cached[0]
+        @filters = cached[1]
+        return true
+      end
 
       # Skip leading whitespace
       pos = 0
@@ -170,7 +200,13 @@ module Liquid
       elsif Expression::LITERALS.key?(expr_markup)
         Expression::LITERALS[expr_markup]
       elsif cache
-        cache[expr_markup] || (cache[expr_markup] = VariableLookup.parse_simple(expr_markup, ss, cache).freeze)
+        if (hit = cache[expr_markup])
+          hit
+        else
+          hit = VariableLookup.parse_simple(expr_markup, ss, cache).freeze
+          cache[expr_markup] = hit
+          hit
+        end
       else
         VariableLookup.parse_simple(expr_markup, ss || StringScanner.new(""), nil).freeze
       end
@@ -178,6 +214,7 @@ module Liquid
       # End of markup? No filters.
       if pos >= len
         @filters = Const::EMPTY_ARRAY
+        _cache_variable_state(markup, parse_context)
         return true
       end
 
@@ -186,7 +223,8 @@ module Liquid
 
       # Try fast filter scanning first — handles no-arg and simple-arg filters
       # Falls through to Lexer-based parsing for complex cases
-      @filters = []
+      first_filter = nil
+      @filters = nil
       filter_pos = pos
 
       while filter_pos < len && markup.getbyte(filter_pos) == 124 # '|'
@@ -204,7 +242,18 @@ module Liquid
           break unless (b >= 97 && b <= 122) || (b >= 65 && b <= 90) || (b >= 48 && b <= 57) || b == 95 || b == 45
           filter_pos += 1
         end
-        filtername = markup.byteslice(fname_start, filter_pos - fname_start)
+        fname_len = filter_pos - fname_start
+        filtername = nil
+        if fname_len <= 7
+          fkey = 0
+          fj = fname_start
+          while fj < filter_pos
+            fkey = (fkey << 8) | markup.getbyte(fj)
+            fj += 1
+          end
+          filtername = FILTER_INT_KEYS[fkey]
+        end
+        filtername ||= FILTER_NAME_INTERN[markup.byteslice(fname_start, fname_len)]
 
         # Skip whitespace
         filter_pos += 1 while filter_pos < len && markup.getbyte(filter_pos) == 32
@@ -229,14 +278,16 @@ module Liquid
               filter_args << markup.byteslice(arg_start + 1, filter_pos - arg_start - 2)
             elsif b && ((b >= 48 && b <= 57) || (b == 45 && filter_pos + 1 < len && markup.getbyte(filter_pos + 1) >= 48 && markup.getbyte(filter_pos + 1) <= 57))
               # Number
+              is_float = false
               filter_pos += 1 if b == 45
               filter_pos += 1 while filter_pos < len && markup.getbyte(filter_pos) >= 48 && markup.getbyte(filter_pos) <= 57
               if filter_pos < len && markup.getbyte(filter_pos) == 46 # float
+                is_float = true
                 filter_pos += 1
                 filter_pos += 1 while filter_pos < len && markup.getbyte(filter_pos) >= 48 && markup.getbyte(filter_pos) <= 57
               end
               num_str = markup.byteslice(arg_start, filter_pos - arg_start)
-              filter_args << (num_str.include?('.') ? num_str.to_f : num_str.to_i)
+              filter_args << (is_float ? num_str.to_f : num_str.to_i)
             elsif b && ((b >= 97 && b <= 122) || (b >= 65 && b <= 90) || b == 95)
               # Identifier
               id_start = filter_pos
@@ -277,6 +328,7 @@ module Liquid
 
           if fall_to_lexer
             # Complex filter — fall to Lexer for this and remaining filters
+            @filters ||= first_filter ? [first_filter] : []
             rest_start = fname_start
             rest_start -= 1 while rest_start > pos && markup.getbyte(rest_start) != 124
             rest_markup = markup.byteslice(rest_start, len - rest_start)
@@ -291,10 +343,24 @@ module Liquid
             return true
           end
 
-          @filters << [filtername, filter_args]
+          current_tuple = [filtername, filter_args]
+          if @filters
+            @filters << current_tuple
+          elsif first_filter
+            @filters = [first_filter, current_tuple]
+          else
+            first_filter = current_tuple
+          end
         else
           # No args — add as simple filter
-          @filters << NO_ARG_FILTER_CACHE[filtername]
+          current_tuple = NO_ARG_FILTER_CACHE[filtername]
+          if @filters
+            @filters << current_tuple
+          elsif first_filter
+            @filters = [first_filter, current_tuple]
+          else
+            first_filter = current_tuple
+          end
         end
 
         # Skip whitespace between filters
@@ -304,13 +370,46 @@ module Liquid
       # Must have consumed everything
       return false if filter_pos < len
 
-      @filters = Const::EMPTY_ARRAY if @filters.empty?
+      if @filters
+        # 2+ filters already in array
+      elsif first_filter
+        if first_filter.frozen? && first_filter.length == 2 && first_filter[1].equal?(Const::EMPTY_ARRAY)
+          @filters = SINGLE_NO_ARG_FILTER_CACHE[first_filter[0]]
+        else
+          @filters = [first_filter]
+        end
+      else
+        @filters = Const::EMPTY_ARRAY
+      end
+
+      _cache_variable_state(markup, parse_context)
       true
     rescue SyntaxError
       # If fast parse fails, fall back to full parse
       @name = nil
       @filters = nil
       false
+    end
+
+    private def _cache_variable_state(markup, parse_context)
+      if parse_context.variable_cacheable && @name.frozen?
+        filters = @filters
+        unless filters.frozen?
+          filters.each do |t|
+            unless t.frozen?
+              fa = t[1]
+              if fa.is_a?(Array) && !fa.frozen?
+                fa.each_with_index { |a, i| fa[i] = a.dup.freeze if a.is_a?(String) && !a.frozen? }
+                fa.freeze
+              end
+              t.freeze
+            end
+          end
+          filters.freeze
+          @filters = filters
+        end
+        GLOBAL_VARIABLE_STATE_CACHE[markup] = [@name, filters].freeze
+      end
     end
 
     def raw
@@ -397,13 +496,28 @@ module Liquid
     end
 
     def render_to_output_buffer(context, output)
-      # Fast path: no filters and no global filter
-      obj = if @filters.empty? && context.global_filter.nil?
-        context.evaluate(@name)
+      filters = @filters
+      if filters.equal?(Const::EMPTY_ARRAY) && context.global_filter.nil?
+        obj = @name.instance_of?(VariableLookup) ? @name.evaluate(context) : context.evaluate(@name)
+      elsif filters.length == 1 && context.global_filter.nil?
+        # Fast path: single filter (very common, e.g. {{ x | escape }})
+        fn, fa, fk = filters[0]
+        obj = @name.instance_of?(VariableLookup) ? @name.evaluate(context) : context.evaluate(@name)
+        obj = if fa.empty? && !fk
+          context.invoke_single(fn, obj)
+        elsif !fk && fa.length == 1
+          context.invoke_two(fn, obj, context.evaluate(fa[0]))
+        else
+          render(context)
+        end
       else
-        render(context)
+        obj = render(context)
       end
-      render_obj_to_output(obj, output)
+      if obj.instance_of?(String)
+        output << obj
+      elsif !obj.nil?
+        render_obj_to_output(obj, output)
+      end
       output
     end
 

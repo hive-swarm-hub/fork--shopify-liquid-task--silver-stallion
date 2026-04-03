@@ -3,20 +3,49 @@
 module Liquid
   class ParseContext
     attr_accessor :locale, :line_number, :trim_whitespace, :depth
-    attr_reader :partial, :warnings, :error_mode, :environment, :expression_cache, :string_scanner, :cursor
+    attr_reader :partial, :error_mode, :environment, :expression_cache, :string_scanner, :cursor, :variable_cacheable
+
+    # Shared global expression cache — persists across template parses.
+    GLOBAL_EXPRESSION_CACHE = {}
+
+    def warnings
+      @warnings
+    end
+
+    # Lazy-add a warning without requiring @warnings to start as a mutable Array.
+    def add_warning(e)
+      if @warnings.equal?(Const::EMPTY_ARRAY)
+        @warnings = [e]
+      else
+        @warnings << e
+      end
+    end
+
+    # Shared frozen default template options (lazily set after I18n is ready)
+    def self.default_template_options
+      @_default_template_options ||= { locale: I18n.default }.freeze
+    end
 
     def initialize(options = Const::EMPTY_HASH)
       @environment = options.fetch(:environment, Environment.default)
-      @template_options = options ? options.dup : {}
+      if options.empty?
+        @template_options = self.class.default_template_options
+        @locale = @template_options[:locale]
+        @variable_cacheable = true
+      else
+        @template_options = options.dup
+        @locale = @template_options[:locale] ||= I18n.default
+        @variable_cacheable = false
+      end
+      @warnings = Const::EMPTY_ARRAY
 
-      @locale   = @template_options[:locale] ||= I18n.new
-      @warnings = []
+      # Reuse StringScanner and Cursor across parses via Thread-local storage.
+      @string_scanner = (Thread.current[:_liq_ss] ||= StringScanner.new(""))
+      @string_scanner.string = ""
 
-      # constructing new StringScanner in Lexer, Tokenizer, etc is expensive
-      # This StringScanner will be shared by all of them
-      @string_scanner = StringScanner.new("")
-
-      @expression_cache = if options[:expression_cache].nil?
+      @expression_cache = if @variable_cacheable
+        GLOBAL_EXPRESSION_CACHE
+      elsif options[:expression_cache].nil?
         {}
       elsif options[:expression_cache].respond_to?(:[]) && options[:expression_cache].respond_to?(:[]=)
         options[:expression_cache]
@@ -24,7 +53,8 @@ module Liquid
         {}
       end
 
-      @cursor = Cursor.new("")
+      @cursor = (Thread.current[:_liq_cursor] ||= Cursor.new(""))
+      @cursor.reset("")
 
       self.depth   = 0
       self.partial = false

@@ -74,9 +74,11 @@ module Liquid
       loop do
         case condition.child_relation
         when :or
-          break if Liquid::Utils.to_liquid_value(result)
+          r = result.respond_to?(:to_liquid_value) ? result.to_liquid_value : result
+          break if r
         when :and
-          break unless Liquid::Utils.to_liquid_value(result)
+          r = result.respond_to?(:to_liquid_value) ? result.to_liquid_value : result
+          break unless r
         else
           break
         end
@@ -186,17 +188,29 @@ module Liquid
       left  = Liquid::Utils.to_liquid_value(context.evaluate(left))
       right = Liquid::Utils.to_liquid_value(context.evaluate(right))
 
-      operation = self.class.operators[op] || raise(Liquid::ArgumentError, "Unknown operator #{op}")
-
-      if operation.respond_to?(:call)
-        operation.call(self, left, right)
-      elsif left.respond_to?(operation) && right.respond_to?(operation) && !left.is_a?(Hash) && !right.is_a?(Hash)
-        begin
-          left.send(operation, right)
-        rescue ::ArgumentError => e
-          raise Liquid::ArgumentError, e.message
+      case op
+      when '=='
+        equal_variables(left, right)
+      when '!='
+        !equal_variables(left, right)
+      when '<', '>', '>=', '<='
+        if left.respond_to?(op) && right.respond_to?(op) && !left.is_a?(Hash) && !right.is_a?(Hash)
+          left.send(op, right)
+        end
+      else
+        operation = self.class.operators[op] || raise(Liquid::ArgumentError, "Unknown operator #{op}")
+        if operation.respond_to?(:call)
+          operation.call(self, left, right)
+        elsif left.respond_to?(operation) && right.respond_to?(operation) && !left.is_a?(Hash) && !right.is_a?(Hash)
+          begin
+            left.send(operation, right)
+          rescue ::ArgumentError => e
+            raise Liquid::ArgumentError, e.message
+          end
         end
       end
+    rescue ::ArgumentError => e
+      raise Liquid::ArgumentError, e.message
     end
 
     def deprecated_default_context
