@@ -99,9 +99,24 @@ module Liquid
     #   Escapes special characters in HTML, such as `<>`, `'`, and `&`, and converts characters into escape sequences. The filter doesn't effect characters within the string that don’t have a corresponding escape sequence.".
     # @liquid_syntax string | escape
     # @liquid_return [string]
+    ESCAPE_SPECIAL_BYTES = [38, 60, 62, 34, 39].freeze # &, <, >, ", '
+
     def escape(input)
       return if input.nil?
-      CGI.escapeHTML(input.instance_of?(String) ? input : Utils.to_s(input))
+      str = input.instance_of?(String) ? input : Utils.to_s(input)
+      # Fast path: check if there are any special chars to escape
+      len = str.bytesize
+      pos = 0
+      has_special = false
+      while pos < len
+        b = str.getbyte(pos)
+        if b == 38 || b == 60 || b == 62 || b == 34 || b == 39
+          has_special = true
+          break
+        end
+        pos += 1
+      end
+      has_special ? CGI.escapeHTML(str) : str
     end
     alias_method :h, :escape
 

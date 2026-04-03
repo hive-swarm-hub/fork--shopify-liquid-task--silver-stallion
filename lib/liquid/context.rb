@@ -187,10 +187,12 @@ module Liquid
     #
     #   context['var']  #=> nil
     def stack(new_scope = {})
-      push(new_scope)
+      @scopes.unshift(new_scope)
+      check_overflow
       yield
     ensure
-      pop
+      raise ContextError if @scopes.size == 1
+      @scopes.shift
     end
 
     # Creates a new context inheriting resource limits, filters, environment etc.,
