@@ -172,10 +172,23 @@ module Liquid
       # Fast path: single-segment lookup (e.g. product.title) — avoids Array overhead
       if @single_lookup
         key = @single_lookup
-        if object.instance_of?(Hash) ? object.key?(key) :
-            (object.respond_to?(:[]) &&
+        if object.instance_of?(Hash)
+          if object.key?(key)
+            object = context.lookup_and_evaluate(object, key)
+            unless object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Float) ||
+                object.instance_of?(Array) || object.instance_of?(Hash) || object.nil?
+              object = object.to_liquid
+              object.context = context if object.respond_to?(:context=)
+            end
+          elsif @command_flags != 0 && object.respond_to?(key)
+            object = object.send(key)
+          else
+            return nil unless context.strict_variables
+            raise Liquid::UndefinedVariable, "undefined variable #{key}"
+          end
+        elsif object.respond_to?(:[]) &&
               ((object.respond_to?(:key?) && object.key?(key)) ||
-               (object.respond_to?(:fetch) && key.is_a?(Integer))))
+               (object.respond_to?(:fetch) && key.is_a?(Integer)))
           object = context.lookup_and_evaluate(object, key)
           unless object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Float) ||
               object.instance_of?(Array) || object.instance_of?(Hash) || object.nil?
@@ -214,14 +227,28 @@ module Liquid
 
         # If object is a hash- or array-like object we look for the
         # presence of the key and if its available we return it
-        if object.instance_of?(Hash) ? object.key?(key) :
-            (object.respond_to?(:[]) &&
+        if object.instance_of?(Hash)
+          if object.key?(key)
+            object = context.lookup_and_evaluate(object, key)
+            unless object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Float) ||
+                object.instance_of?(Array) || object.instance_of?(Hash) || object.nil?
+              object = object.to_liquid
+              object.context = context if object.respond_to?(:context=)
+            end
+          elsif lookup_command?(i) && object.respond_to?(key)
+            object = object.send(key)
+            unless object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Array) || object.nil?
+              object = object.to_liquid
+              object.context = context if object.respond_to?(:context=)
+            end
+          else
+            return nil unless context.strict_variables
+            raise Liquid::UndefinedVariable, "undefined variable #{key}"
+          end
+        elsif object.respond_to?(:[]) &&
               ((object.respond_to?(:key?) && object.key?(key)) ||
-               (object.respond_to?(:fetch) && key.is_a?(Integer))))
-
-          # if its a proc we will replace the entry with the proc
+               (object.respond_to?(:fetch) && key.is_a?(Integer)))
           object = context.lookup_and_evaluate(object, key)
-          # Skip to_liquid for common primitive types (they return self)
           unless object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Float) ||
               object.instance_of?(Array) || object.instance_of?(Hash) || object.nil?
             object = object.to_liquid

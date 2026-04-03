@@ -240,7 +240,8 @@ module Liquid
     end
 
     def evaluate(object)
-      return object if object.instance_of?(String) || object.instance_of?(Integer)
+      return object if object.instance_of?(String) || object.instance_of?(Integer) || object.instance_of?(Float)
+      return object if object.nil? || object.equal?(true) || object.equal?(false)
       object.respond_to?(:evaluate) ? object.evaluate(self) : object
     end
 
@@ -334,18 +335,27 @@ module Liquid
 
     def try_variable_find_in_environments(key, raise_on_not_found:)
       envs = @environments
-      i = 0
       len = envs.length
-      while i < len
-        found_variable = lookup_and_evaluate(envs[i], key, raise_on_not_found: raise_on_not_found)
+      if len == 1
+        # Fast path: single environment (most common case)
+        found_variable = lookup_and_evaluate(envs[0], key, raise_on_not_found: raise_on_not_found)
         if !found_variable.nil? || @strict_variables && raise_on_not_found
           return found_variable
         end
-        i += 1
+      elsif len > 0
+        i = 0
+        while i < len
+          found_variable = lookup_and_evaluate(envs[i], key, raise_on_not_found: raise_on_not_found)
+          if !found_variable.nil? || @strict_variables && raise_on_not_found
+            return found_variable
+          end
+          i += 1
+        end
       end
       static_envs = @static_environments
-      i = 0
       len = static_envs.length
+      return nil if len == 0
+      i = 0
       while i < len
         found_variable = lookup_and_evaluate(static_envs[i], key, raise_on_not_found: raise_on_not_found)
         if !found_variable.nil? || @strict_variables && raise_on_not_found
