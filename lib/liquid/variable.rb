@@ -94,8 +94,10 @@ module Liquid
 
     SINGLE_NO_ARG_FILTER_CACHE = Hash.new { |h, k| h[k] = [NO_ARG_FILTER_CACHE[k]].freeze }
 
-    # Global cache for variable parse state (markup → [name, filters]).
-    GLOBAL_VARIABLE_STATE_CACHE = {}
+    # Global caches for variable parse state (markup → name, markup → filters).
+    # Split into two hashes to avoid [name, filters].freeze array allocation.
+    GLOBAL_VARIABLE_NAME_CACHE = {}
+    GLOBAL_VARIABLE_FILTERS_CACHE = {}
 
     FilterMarkupRegex        = /#{FilterSeparator}\s*(.*)/om
     FilterParser             = /(?:\s+|#{QuotedFragment}|#{ArgumentSeparator})+/o
@@ -128,10 +130,10 @@ module Liquid
       len = markup.bytesize
       return false if len == 0
 
-      # Check global variable state cache
-      if parse_context.variable_cacheable && (cached = GLOBAL_VARIABLE_STATE_CACHE[markup])
-        @name    = cached[0]
-        @filters = cached[1]
+      # Check global variable state cache (split into name + filters hashes)
+      if parse_context.variable_cacheable && (cached_name = GLOBAL_VARIABLE_NAME_CACHE[markup])
+        @name    = cached_name
+        @filters = GLOBAL_VARIABLE_FILTERS_CACHE[markup]
         return true
       end
 
@@ -398,7 +400,8 @@ module Liquid
           filters.freeze
           @filters = filters
         end
-        GLOBAL_VARIABLE_STATE_CACHE[markup] = [@name, filters].freeze
+        GLOBAL_VARIABLE_NAME_CACHE[markup] = @name
+        GLOBAL_VARIABLE_FILTERS_CACHE[markup] = filters
       end
       true
     rescue SyntaxError

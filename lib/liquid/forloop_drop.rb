@@ -14,6 +14,14 @@ module Liquid
       @index      = 0
     end
 
+    # Reset for reuse — avoids allocating a new ForloopDrop per for-loop invocation
+    def reset(name, length, parentloop)
+      @name       = name
+      @length     = length
+      @parentloop = parentloop
+      @index      = 0
+    end
+
     # @liquid_public_docs
     # @liquid_name length
     # @liquid_summary
