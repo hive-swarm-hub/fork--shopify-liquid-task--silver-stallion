@@ -256,10 +256,10 @@ module Liquid
     # @liquid_return [string]
     def truncate(input, length = 50, truncate_string = "...")
       return if input.nil?
-      input_str = Utils.to_s(input)
-      length    = Utils.to_integer(length)
+      input_str = input.instance_of?(String) ? input : Utils.to_s(input)
+      length    = length.instance_of?(Integer) ? length : Utils.to_integer(length)
 
-      truncate_string_str = Utils.to_s(truncate_string)
+      truncate_string_str = truncate_string.instance_of?(String) ? truncate_string : Utils.to_s(truncate_string)
 
       l = length - truncate_string_str.length
       l = 0 if l < 0
@@ -288,8 +288,8 @@ module Liquid
     # @liquid_return [string]
     def truncatewords(input, words = 15, truncate_string = "...")
       return if input.nil?
-      input = Utils.to_s(input)
-      words = Utils.to_integer(words)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
+      words = words.instance_of?(Integer) ? words : Utils.to_integer(words)
       words = 1 if words <= 0
 
       return input if words + 1 > MAX_I32
@@ -414,7 +414,7 @@ module Liquid
     # @liquid_syntax string | strip
     # @liquid_return [string]
     def strip(input)
-      input = Utils.to_s(input)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
       input.strip
     end
 
@@ -426,7 +426,7 @@ module Liquid
     # @liquid_syntax string | lstrip
     # @liquid_return [string]
     def lstrip(input)
-      input = Utils.to_s(input)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
       input.lstrip
     end
 
@@ -438,7 +438,7 @@ module Liquid
     # @liquid_syntax string | rstrip
     # @liquid_return [string]
     def rstrip(input)
-      input = Utils.to_s(input)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
       input.rstrip
     end
 
@@ -467,7 +467,7 @@ module Liquid
     # @liquid_syntax string | strip_newlines
     # @liquid_return [string]
     def strip_newlines(input)
-      input = Utils.to_s(input)
+      input = input.instance_of?(String) ? input : Utils.to_s(input)
       input.gsub(/\r?\n/, '')
     end
 
